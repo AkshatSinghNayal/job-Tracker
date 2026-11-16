@@ -285,6 +285,9 @@ function companyCard(item) {
 
 /* ================= Kanban Pipeline Board ================= */
 
+let activeDraggedAppId = null;
+let dragOccurredTime = 0;
+
 function kanbanBoard(items = [], onReload) {
   const board = el('div', { class: 'kanban-board', role: 'region', 'aria-label': 'Kanban pipeline board' });
 
@@ -331,30 +334,96 @@ function kanbanBoard(items = [], onReload) {
 
     const colEl = el('div', { class: 'kanban-col', 'data-status': col.id }, colHeader, cardsContainer);
 
-    // Drag-over on column
-    colEl.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      colEl.classList.add('kanban-drop-target');
-    });
+    let dragCounter = 0;
 
-    colEl.addEventListener('dragleave', (e) => {
-      if (!colEl.contains(e.relatedTarget)) {
+    const handleDragEnter = (e) => {
+      e.preventDefault();
+      dragCounter++;
+      colEl.classList.add('kanban-drop-target');
+    };
+
+    const handleDragOver = (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'move';
+      }
+      colEl.classList.add('kanban-drop-target');
+    };
+
+    const handleDragLeave = (e) => {
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
         colEl.classList.remove('kanban-drop-target');
       }
-    });
+    };
+
+    colEl.addEventListener('dragenter', handleDragEnter);
+    colEl.addEventListener('dragover', handleDragOver);
+    colEl.addEventListener('dragleave', handleDragLeave);
 
     colEl.addEventListener('drop', async (e) => {
       e.preventDefault();
+      e.stopPropagation();
+      dragCounter = 0;
       colEl.classList.remove('kanban-drop-target');
-      const appId = e.dataTransfer.getData('text/plain');
+      document.querySelectorAll('.kanban-col').forEach((c) => c.classList.remove('kanban-drop-target'));
+
+      let appId = null;
+      if (e.dataTransfer) {
+        try {
+          appId = e.dataTransfer.getData('text/plain') ||
+                  e.dataTransfer.getData('application/x-jobtracker-app');
+        } catch (_) {}
+      }
+      if (!appId) {
+        appId = activeDraggedAppId;
+      }
       if (!appId) return;
 
       const targetItem = items.find((i) => String(i.id) === String(appId));
-      if (!targetItem || targetItem.status === col.id) return;
+      if (!targetItem) return;
+
+      // Don't do anything if dropping onto the same stage
+      if (targetItem.status === col.id) return;
+      if (col.id === 'rejected' && (targetItem.status === 'rejected' || targetItem.status === 'withdrawn')) return;
 
       const previousStatus = targetItem.status;
-      targetItem.status = col.id; // optimistic
+      targetItem.status = col.id; // optimistic in memory
+
+      // Optimistic DOM move
+      const cardEl = board.querySelector(`.kanban-card[data-id="${appId}"]`);
+      if (cardEl) {
+        const sourceContainer = cardEl.parentElement;
+        cardsContainer.appendChild(cardEl);
+
+        // Update badge on the card
+        const badgeEl = cardEl.querySelector('.badge');
+        if (badgeEl) {
+          badgeEl.className = `badge badge-${col.id}`;
+          badgeEl.textContent = col.id;
+        }
+
+        // Clean up empty slot in target column
+        const targetEmpty = cardsContainer.querySelector('.kanban-empty-slot');
+        if (targetEmpty) targetEmpty.remove();
+
+        // If source column is now empty, add empty placeholder
+        if (sourceContainer && !sourceContainer.querySelector('.kanban-card')) {
+          sourceContainer.appendChild(el('div', { class: 'kanban-empty-slot' }, 'Drop application here'));
+        }
+
+        // Update count pills on both columns
+        const sourceColEl = sourceContainer?.closest('.kanban-col');
+        if (sourceColEl) {
+          const srcCount = sourceColEl.querySelector('.col-count-pill');
+          const srcCards = sourceColEl.querySelectorAll('.kanban-card').length;
+          if (srcCount) srcCount.textContent = String(srcCards);
+        }
+        const targetCount = colEl.querySelector('.col-count-pill');
+        const targetCards = colEl.querySelectorAll('.kanban-card').length;
+        if (targetCount) targetCount.textContent = String(targetCards);
+      }
 
       try {
         const fd = new FormData();
@@ -376,14 +445,13 @@ function kanbanBoard(items = [], onReload) {
 }
 
 function kanbanCard(item, onReload) {
-  let isDragging = false;
   const grad = companyGradient(item.company || '');
 
   const card = el('div', {
     class: 'kanban-card',
     tabindex: '0',
     role: 'button',
-    draggable: 'true',
+    'data-id': String(item.id),
     'aria-label': `${item.company} — ${item.job_title}`,
   },
     el('div', { class: 'kanban-card-top' },
@@ -398,23 +466,39 @@ function kanbanCard(item, onReload) {
     ),
   );
 
+  card.draggable = true;
+
   card.addEventListener('dragstart', (e) => {
-    isDragging = true;
-    e.dataTransfer.setData('text/plain', item.id);
-    e.dataTransfer.effectAllowed = 'move';
+    activeDraggedAppId = String(item.id);
+    dragOccurredTime = Date.now();
+    try {
+      e.dataTransfer.clearData();
+      e.dataTransfer.setData('text/plain', String(item.id));
+      e.dataTransfer.setData('application/x-jobtracker-app', String(item.id));
+      e.dataTransfer.effectAllowed = 'move';
+    } catch (_) {}
     card.classList.add('is-dragging');
+    document.body.classList.add('kanban-is-dragging');
   });
 
   card.addEventListener('dragend', () => {
-    setTimeout(() => { isDragging = false; }, 80);
     card.classList.remove('is-dragging');
+    document.body.classList.remove('kanban-is-dragging');
     document.querySelectorAll('.kanban-col').forEach((c) => c.classList.remove('kanban-drop-target'));
+    dragOccurredTime = Date.now();
+    setTimeout(() => {
+      activeDraggedAppId = null;
+    }, 250);
   });
 
   card.addEventListener('click', (e) => {
-    if (!isDragging) {
-      location.hash = `#/apps/${item.id}`;
+    // If a drag operation was active or ended in the last 300ms, ignore trailing click
+    if (activeDraggedAppId || (Date.now() - dragOccurredTime < 300)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
     }
+    location.hash = `#/apps/${item.id}`;
   });
 
   card.addEventListener('keydown', (e) => {

@@ -764,8 +764,15 @@ p { margin: 0 0 var(--s-3); }
 }
 .kanban-col.kanban-drop-target {
   background: var(--accent-soft);
+  border-color: var(--accent);
   box-shadow: var(--shadow-3);
   transform: translate(-1px, -1px);
+}
+.kanban-col.kanban-drop-target .kanban-cards-list {
+  background: rgba(99, 102, 241, 0.08);
+  border-radius: var(--r-sm);
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
 }
 .kanban-col-header {
   display: flex;
@@ -843,9 +850,18 @@ p { margin: 0 0 var(--s-3); }
   padding: 12px;
   box-shadow: var(--shadow-1);
   cursor: grab;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
   user-select: none;
+  -webkit-user-drag: element;
+  touch-action: pan-y;
   transition: transform var(--t-fast), box-shadow var(--t-fast);
   text-align: left;
+}
+.kanban-card * {
+  -webkit-user-select: none;
+  user-select: none;
 }
 .kanban-card:hover {
   transform: translate(-2px, -2px);
@@ -856,8 +872,24 @@ p { margin: 0 0 var(--s-3); }
   cursor: grabbing;
 }
 .kanban-card.is-dragging {
-  opacity: 0.5;
+  opacity: 0.35;
   transform: scale(0.96);
+  border-style: dashed;
+}
+
+body.kanban-is-dragging,
+body.kanban-is-dragging * {
+  cursor: grabbing !important;
+}
+body.kanban-is-dragging .kanban-empty-slot,
+body.kanban-is-dragging .kanban-card-top,
+body.kanban-is-dragging .kanban-card-title,
+body.kanban-is-dragging .kanban-card-foot,
+body.kanban-is-dragging .col-status-dot,
+body.kanban-is-dragging .col-title,
+body.kanban-is-dragging .col-count-pill,
+body.kanban-is-dragging .col-quick-add-btn {
+  pointer-events: none;
 }
 .kanban-card-top {
   display: flex;
@@ -1979,6 +2011,14 @@ p { margin: 0 0 var(--s-3); }
 }
 [data-theme="dark"] .kanban-card:hover {
   background: #181b22;
+}
+[data-theme="dark"] .kanban-col.kanban-drop-target {
+  background: #1e1b4b;
+  border-color: #818cf8;
+}
+[data-theme="dark"] .kanban-col.kanban-drop-target .kanban-cards-list {
+  background: rgba(129, 140, 248, 0.12);
+  outline-color: #818cf8;
 }
 
 [data-theme="dark"] .dropzone {
