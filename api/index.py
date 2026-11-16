@@ -9,3 +9,7 @@ if str(root_dir) not in sys.path:
 
 from app.main import app  # noqa: F401, E402
 
+# Export both 'app' and 'handler' for full compatibility across all Vercel Python runtimes
+handler = app
+
+

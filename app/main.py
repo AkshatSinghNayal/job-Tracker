@@ -157,8 +157,13 @@ def create_app() -> FastAPI:
     app.include_router(explorer.router)
     app.include_router(pages.router)
 
-    static_dir = Path(__file__).parent / "static"
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    static_candidates = [
+        Path(__file__).resolve().parent / "static",
+        Path.cwd() / "app" / "static",
+        Path("/var/task/app/static"),
+    ]
+    static_dir = next((c for c in static_candidates if c.is_dir()), static_candidates[0])
+    app.mount("/static", StaticFiles(directory=str(static_dir), check_dir=False), name="static")
     return app
 
 
