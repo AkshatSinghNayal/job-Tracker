@@ -112,10 +112,28 @@ function shellEl() {
     ),
     el('div', { class: 'topbar-right row', style: { gap: '10px' } },
       themeToggle,
-      el('button', {
-        class: 'btn btn-primary', id: 'btn-new-app',
-        onclick: () => openNewApplicationDrawer(loadApplications),
-      }, icon('plus', 16), 'New application'),
+      (() => {
+        const btn = el('button', {
+          class: 'btn btn-primary', id: 'btn-new-app',
+          title: 'New application (click or drop a resume PDF here)',
+          onclick: () => openNewApplicationDrawer(loadApplications),
+        }, icon('plus', 16), 'New application');
+
+        btn.addEventListener('dragover', (e) => {
+          if (e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+          }
+        });
+        btn.addEventListener('drop', (e) => {
+          if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            openNewApplicationDrawer(loadApplications, null, 'saved', e.dataTransfer.files[0]);
+          }
+        });
+        return btn;
+      })(),
     ),
   );
 

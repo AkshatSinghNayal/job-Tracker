@@ -346,9 +346,12 @@ function createEmptySlot(col, onReload) {
   const slot = el('div', {
     class: 'kanban-empty-slot',
     'data-stage': col.id,
-    title: `Drop application here or click to add to ${col.label}`,
+    title: `Drop resume PDF or drag application here, or click to add to ${col.label}`,
     onclick: () => openNewApplicationDrawer(onReload, null, col.id),
-  }, 'Drop application here');
+  },
+    el('div', { class: 'empty-slot-title' }, 'Drop application or resume PDF here'),
+    el('div', { class: 'empty-slot-sub' }, 'Drop resume to open new application'),
+  );
 
   slot.addEventListener('dragenter', (e) => {
     e.preventDefault();
@@ -358,7 +361,11 @@ function createEmptySlot(col, onReload) {
   slot.addEventListener('dragover', (e) => {
     e.preventDefault();
     if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = 'move';
+      if (e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+        e.dataTransfer.dropEffect = 'copy';
+      } else {
+        e.dataTransfer.dropEffect = 'move';
+      }
     }
     slot.classList.add('slot-active');
   });
@@ -374,6 +381,14 @@ function createEmptySlot(col, onReload) {
     document.querySelectorAll('.kanban-col').forEach((c) => c.classList.remove('kanban-drop-target'));
     document.querySelectorAll('.kanban-empty-slot').forEach((s) => s.classList.remove('slot-active'));
 
+    // 1. External file drop (e.g. resume PDF dropped from computer)
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const droppedFile = e.dataTransfer.files[0];
+      openNewApplicationDrawer(onReload, null, col.id, droppedFile);
+      return;
+    }
+
+    // 2. Existing application card move
     let appId = null;
     if (e.dataTransfer) {
       try {
@@ -620,7 +635,11 @@ function kanbanBoard(items = [], onReload) {
     const handleDragOver = (e) => {
       e.preventDefault();
       if (e.dataTransfer) {
-        e.dataTransfer.dropEffect = 'move';
+        if (e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+          e.dataTransfer.dropEffect = 'copy';
+        } else {
+          e.dataTransfer.dropEffect = 'move';
+        }
       }
       colEl.classList.add('kanban-drop-target');
     };
@@ -641,6 +660,14 @@ function kanbanBoard(items = [], onReload) {
       document.querySelectorAll('.kanban-col').forEach((c) => c.classList.remove('kanban-drop-target'));
       document.querySelectorAll('.kanban-empty-slot').forEach((s) => s.classList.remove('slot-active'));
 
+      // 1. External file drop on the column (e.g. resume PDF)
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const droppedFile = e.dataTransfer.files[0];
+        openNewApplicationDrawer(onReload, null, col.id, droppedFile);
+        return;
+      }
+
+      // 2. Existing application card move
       let appId = null;
       if (e.dataTransfer) {
         try {
@@ -669,6 +696,22 @@ function kanbanBoard(items = [], onReload) {
 
     board.append(colEl);
   }
+
+  // Board-level fallback for file drops anywhere on board background
+  board.addEventListener('dragover', (e) => {
+    if (e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+
+  board.addEventListener('drop', (e) => {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      e.preventDefault();
+      const droppedFile = e.dataTransfer.files[0];
+      openNewApplicationDrawer(onReload, null, 'saved', droppedFile);
+    }
+  });
 
   return board;
 }
@@ -767,7 +810,36 @@ function kanbanCard(item, onReload) {
 
 const MAX_UPLOAD_MB = 10;
 
-export function openNewApplicationDrawer(onSaved, existing = null, defaultStatus = 'saved') {
+function guessDetailsFromFilename(filename) {
+  if (!filename) return {};
+  const base = filename.replace(/\.pdf$/i, '').trim();
+
+  // Pattern: "Role at Company" (e.g. "Software Engineer at Google.pdf")
+  const atMatch = base.match(/^(.+?)\s+at\s+(.+)$/i);
+  if (atMatch) {
+    const role = atMatch[1].replace(/[-_]/g, ' ').trim();
+    const comp = atMatch[2].replace(/[-_]/g, ' ').trim();
+    return { jobTitle: role, company: comp };
+  }
+
+  // Pattern with separator: "Company - Job Title" or "Job Title - Company"
+  if (base.includes(' - ') || base.includes(' – ') || base.includes(' — ')) {
+    const parts = base.split(/\s*[-–—]\s*/).map((s) => s.trim()).filter(Boolean);
+    const roleRegex = /(engineer|developer|designer|manager|lead|architect|scientist|analyst|consultant|specialist|intern|director|officer|devops|sre|qa|tester)/i;
+    if (parts.length === 2) {
+      if (roleRegex.test(parts[1]) && !roleRegex.test(parts[0])) {
+        return { company: parts[0], jobTitle: parts[1] };
+      }
+      if (roleRegex.test(parts[0]) && !roleRegex.test(parts[1])) {
+        return { jobTitle: parts[0], company: parts[1] };
+      }
+    }
+  }
+
+  return {};
+}
+
+export function openNewApplicationDrawer(onSaved, existing = null, defaultStatus = 'saved', initialFile = null) {
   const isEdit = Boolean(existing?.id);
   let dirty = false;
   let pickedFile = null;
@@ -871,6 +943,10 @@ export function openNewApplicationDrawer(onSaved, existing = null, defaultStatus
   statusSel.value = defaultStatus;
 
   const appliedOn = el('input', { class: 'input', type: 'date' });
+  if (defaultStatus === 'applied' && !appliedOn.value) {
+    appliedOn.value = new Date().toISOString().split('T')[0];
+  }
+
   const jobUrl = el('input', { class: 'input', type: 'url', maxlength: 2000, placeholder: 'https://…' });
   const notes = el('textarea', { class: 'textarea', maxlength: 10000, rows: 3, placeholder: 'Personal notes (# headers, **bold**, - lists, salary, contacts)...' });
 
@@ -933,6 +1009,7 @@ export function openNewApplicationDrawer(onSaved, existing = null, defaultStatus
     pickedFile = file;
     pickedResumeId = null;
     dirty = true;
+    dzHint.textContent = 'Drop a new PDF to replace, or click to browse';
     showFileChip(file.name, file.size, false);
   }
 
@@ -947,7 +1024,11 @@ export function openNewApplicationDrawer(onSaved, existing = null, defaultStatus
       ),
       el('button', {
         class: 'btn btn-ghost btn-sm', 'aria-label': 'Remove file',
-        onclick: () => { pickedFile = null; fileChip.hidden = true; },
+        onclick: () => {
+          pickedFile = null;
+          fileChip.hidden = true;
+          dzHint.textContent = 'Drop your resume PDF here or click to browse';
+        },
       }, 'Remove'),
     );
   }
@@ -980,6 +1061,30 @@ export function openNewApplicationDrawer(onSaved, existing = null, defaultStatus
     e.preventDefault(); dropzone.classList.remove('dragover');
   }));
   dropzone.addEventListener('drop', (e) => pickFile(e.dataTransfer.files[0]));
+
+  // If a dropped resume PDF file was passed upon opening, attach it immediately
+  if (initialFile) {
+    pickFile(initialFile);
+    const guessed = guessDetailsFromFilename(initialFile.name);
+    if (guessed.company && !company.value) {
+      company.value = guessed.company;
+      dirty = true;
+    }
+    if (guessed.jobTitle && !jobTitle.value) {
+      jobTitle.value = guessed.jobTitle;
+      dirty = true;
+    }
+    setTimeout(() => {
+      if (!company.value) {
+        company.focus();
+      } else if (!jobTitle.value) {
+        jobTitle.focus();
+      } else {
+        company.focus();
+      }
+    }, 150);
+    toast(`Resume "${initialFile.name}" attached. Enter details to save.`, 'info');
+  }
 
   const saveBtn = el('button', { class: 'btn btn-primary' }, isEdit ? 'Save changes' : 'Save application');
   saveBtn.addEventListener('click', async () => {
@@ -1043,6 +1148,28 @@ export function openNewApplicationDrawer(onSaved, existing = null, defaultStatus
     field('Job description (Markdown)', jd, counter),
     field('Personal Notes (Markdown)', notes),
   );
+
+  // Allow dropping replacement or initial resume PDF directly anywhere onto drawer
+  body.addEventListener('dragover', (e) => {
+    if (e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      dropzone.classList.add('dragover');
+    }
+  });
+  body.addEventListener('dragleave', (e) => {
+    if (!body.contains(e.relatedTarget)) {
+      dropzone.classList.remove('dragover');
+    }
+  });
+  body.addEventListener('drop', (e) => {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove('dragover');
+      pickFile(e.dataTransfer.files[0]);
+    }
+  });
 
   const drawer = openDrawer({
     title: isEdit ? 'Edit application' : 'New application',

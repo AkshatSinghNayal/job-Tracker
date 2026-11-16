@@ -1036,7 +1036,7 @@ body.kanban-is-dragging .col-quick-add-btn {
 .kanban-empty-slot {
   border: 2px dashed var(--border);
   border-radius: var(--r-md);
-  padding: 28px 14px;
+  padding: 24px 14px;
   text-align: center;
   font-size: var(--fs-xs);
   font-weight: 700;
@@ -1045,6 +1045,24 @@ body.kanban-is-dragging .col-quick-add-btn {
   transition: all var(--t-fast);
   cursor: pointer;
   user-select: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.empty-slot-title {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: inherit;
+  line-height: 1.3;
+}
+.empty-slot-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  opacity: 0.85;
+  line-height: 1.2;
 }
 .kanban-empty-slot:hover,
 .kanban-empty-slot.slot-active {
@@ -1053,11 +1071,20 @@ body.kanban-is-dragging .col-quick-add-btn {
   color: var(--accent);
   transform: scale(1.01);
 }
+.kanban-empty-slot:hover .empty-slot-sub,
+.kanban-empty-slot.slot-active .empty-slot-sub {
+  color: var(--accent);
+  opacity: 1;
+}
 [data-theme="dark"] .kanban-empty-slot:hover,
 [data-theme="dark"] .kanban-empty-slot.slot-active {
   border-color: #818cf8;
   background: rgba(129, 140, 248, 0.15);
   color: #a5b4fc;
+}
+[data-theme="dark"] .kanban-empty-slot:hover .empty-slot-sub,
+[data-theme="dark"] .kanban-empty-slot.slot-active .empty-slot-sub {
+  color: #c7d2fe;
 }
 
 /* ---------- Detail Split View ---------- */
