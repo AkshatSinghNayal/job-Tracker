@@ -536,11 +536,11 @@ export function openNewApplicationDrawer(onSaved, existing = null, defaultStatus
 
   const appliedOn = el('input', { class: 'input', type: 'date' });
   const jobUrl = el('input', { class: 'input', type: 'url', maxlength: 2000, placeholder: 'https://…' });
-  const notes = el('textarea', { class: 'textarea', maxlength: 10000, rows: 3, placeholder: 'Optional notes…' });
+  const notes = el('textarea', { class: 'textarea', maxlength: 10000, rows: 3, placeholder: 'Personal notes (# headers, **bold**, - lists, salary, contacts)...' });
 
   const jd = el('textarea', {
     class: 'textarea', maxlength: 50000, rows: 9,
-    placeholder: 'Paste the full job description here…',
+    placeholder: 'Paste the job description here (supports Markdown)...',
   });
   const counter = el('div', { class: 'char-counter' }, '0 / 50,000');
   jd.addEventListener('input', () => {
@@ -704,8 +704,8 @@ export function openNewApplicationDrawer(onSaved, existing = null, defaultStatus
       el('div', { class: 'field', style: { flex: '1' } }, el('label', {}, 'Applied date'), appliedOn),
     ),
     field('Job URL', jobUrl),
-    field('Job description', jd, counter),
-    field('Notes', notes),
+    field('Job description (Markdown)', jd, counter),
+    field('Personal Notes (Markdown)', notes),
   );
 
   const drawer = openDrawer({

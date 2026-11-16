@@ -1,10 +1,12 @@
-// views/detail.js — split view: JD (left) + PDF viewer (right); tabs on mobile.
+// views/detail.js — split view: JD + Notes (left) + PDF viewer (right); tabs on mobile.
+// Both JD and Notes render full Markdown formatting with tech skill highlighting.
 import { api, fetchBlob, patchUpload } from '../api.js';
-import { store, STATUSES } from '../store.js';
+import { STATUSES } from '../store.js';
 import {
-  el, toast, statusBadge, openDrawer, confirmModal, fmtDate, fmtBytes, companyGradient, icon,
+  el, toast, statusBadge, confirmModal, fmtDate, fmtBytes, companyGradient, icon,
 } from '../components/ui.js';
 import { extractSkills } from '../components/keywords.js';
+import { renderMarkdown } from '../components/markdown.js';
 import { openNewApplicationDrawer } from './applications.js';
 
 export async function renderApplicationDetail(host, appId) {
@@ -37,11 +39,17 @@ export async function renderApplicationDetail(host, appId) {
   };
 
   function detailEl() {
-    const back = el('a', { class: 'btn btn-ghost btn-sm mb-4', href: '#/apps', 'aria-label': 'Back to applications' }, '← Back to Applications');
+    const back = el('a', {
+      class: 'btn btn-ghost btn-sm mb-4',
+      href: '#/apps',
+      'aria-label': 'Back to applications',
+    }, '← Back to Applications');
 
     const grad = companyGradient(record.company || '');
     const statusSel = el('select', {
-      class: 'select status-select', 'aria-label': 'Status', style: { width: 'auto' },
+      class: 'select status-select',
+      'aria-label': 'Status',
+      style: { width: 'auto' },
       onchange: async (e) => {
         try {
           const fd = new FormData();
@@ -50,14 +58,24 @@ export async function renderApplicationDetail(host, appId) {
           record.status = e.target.value;
           toast('Application status updated', 'success');
           load();
-        } catch (err) { toast(err.message, 'error'); e.target.value = record.status; }
+        } catch (err) {
+          toast(err.message, 'error');
+          e.target.value = record.status;
+        }
       },
     }, ...STATUSES.map((s) => el('option', { value: s }, s)));
     statusSel.value = record.status || 'saved';
 
     const header = el('div', { class: 'detail-header mb-4' },
-      el('div', { class: 'avatar', 'aria-hidden': 'true', style: { width: '56px', height: '56px', fontSize: '24px', background: grad, color: '#fff', borderRadius: '14px', border: '2px solid #18181b', boxShadow: '3px 3px 0 #18181b', display: 'grid', placeItems: 'center', fontWeight: '800' } },
-        (record.company || '?')[0].toUpperCase()),
+      el('div', {
+        class: 'avatar',
+        'aria-hidden': 'true',
+        style: {
+          width: '56px', height: '56px', fontSize: '24px', background: grad,
+          color: '#fff', borderRadius: '14px', border: '2px solid #18181b',
+          boxShadow: '3px 3px 0 #18181b', display: 'grid', placeItems: 'center', fontWeight: '800',
+        },
+      }, (record.company || '?')[0].toUpperCase()),
       el('div', { class: 'grow' },
         el('div', { class: 'detail-top-title' },
           el('h1', { text: record.company }),
@@ -66,17 +84,24 @@ export async function renderApplicationDetail(host, appId) {
         el('div', { class: 'meta-line' },
           statusBadge(record.status),
           el('span', { class: 'date' }, `Applied on ${fmtDate(record.applied_on)}`),
-          record.job_url ? el('a', { href: record.job_url, target: '_blank', rel: 'noopener noreferrer', class: 'external-link' }, icon('external', 13), 'View Job Posting') : null,
+          record.job_url ? el('a', {
+            href: record.job_url,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            class: 'external-link',
+          }, icon('external', 13), 'View Job Posting') : null,
         ),
       ),
       statusSel,
     );
 
-    const actions = el('div', { class: 'detail-actions' },
+    // Bottom action buttons (Edit full application or Delete)
+    const actions = el('div', { class: 'detail-actions mt-4' },
       el('button', {
-        class: 'btn btn-secondary btn-sm', 'aria-label': 'Edit application',
+        class: 'btn btn-secondary btn-sm',
+        'aria-label': 'Edit application',
         onclick: () => openNewApplicationDrawer(load, record),
-      }, icon('edit', 14), 'Edit'),
+      }, icon('edit', 14), 'Edit Application Details'),
       el('button', {
         class: 'btn btn-danger btn-sm',
         onclick: async () => {
@@ -92,10 +117,10 @@ export async function renderApplicationDetail(host, appId) {
             location.hash = '#/apps';
           } catch (err) { toast(err.message, 'error'); }
         },
-      }, icon('trash', 14), 'Delete'),
+      }, icon('trash', 14), 'Delete Application'),
     );
 
-    // Left: job description panel with copy button & skill extractor
+    // Left Section 1: Job Description Panel
     const copyBtn = el('button', {
       class: 'btn btn-ghost btn-sm',
       onclick: async () => {
@@ -114,7 +139,8 @@ export async function renderApplicationDetail(host, appId) {
       },
     }, icon('copy', 14), ' Copy JD');
 
-    const jdTextEl = el('div', { class: 'jd-text', text: record.job_description || 'No job description saved.' });
+    const jdContentEl = el('div', { class: 'md-content' });
+    jdContentEl.innerHTML = renderMarkdown(record.job_description || '*No job description saved.*');
 
     // Client-side skill keyword extraction & interactive highlighting
     const skills = extractSkills(record.job_description || '');
@@ -132,11 +158,11 @@ export async function renderApplicationDetail(host, appId) {
             if (activeHighlight === skill) {
               activeHighlight = null;
               chipList.querySelectorAll('.skill-chip').forEach((c) => c.classList.remove('active'));
-              highlightSkill(jdTextEl, record.job_description || '', null);
+              highlightSkill(jdContentEl, record.job_description || '', null);
             } else {
               activeHighlight = skill;
               chipList.querySelectorAll('.skill-chip').forEach((c) => c.classList.toggle('active', c.dataset.skill === skill));
-              highlightSkill(jdTextEl, record.job_description || '', skill);
+              highlightSkill(jdContentEl, record.job_description || '', skill);
             }
           },
         }, skill);
@@ -149,7 +175,7 @@ export async function renderApplicationDetail(host, appId) {
         onclick: () => {
           activeHighlight = null;
           chipList.querySelectorAll('.skill-chip').forEach((c) => c.classList.remove('active'));
-          highlightSkill(jdTextEl, record.job_description || '', null);
+          highlightSkill(jdContentEl, record.job_description || '', null);
           clearBtn.style.display = 'none';
         },
       }, 'Clear highlight');
@@ -169,7 +195,6 @@ export async function renderApplicationDetail(host, appId) {
         chipList,
       );
 
-      // Show/hide clearBtn based on activeHighlight
       chipList.addEventListener('click', () => {
         clearBtn.style.display = activeHighlight ? 'inline-flex' : 'none';
       });
@@ -177,21 +202,26 @@ export async function renderApplicationDetail(host, appId) {
 
     const jdPanel = el('section', { class: 'card jd-panel', 'aria-label': 'Job description' },
       el('div', { class: 'row', style: { marginBottom: '14px', alignItems: 'center' } },
-        el('h2', { style: { margin: '0', flex: '1', fontSize: 'var(--fs-lg)' } }, 'Job Description'),
+        el('div', { class: 'row', style: { gap: '8px', alignItems: 'center', flex: '1' } },
+          el('h2', { style: { margin: '0', fontSize: 'var(--fs-lg)' } }, 'Job Description'),
+          el('span', { class: 'notes-badge-pill' }, 'Markdown Formatted'),
+        ),
         copyBtn,
       ),
       skillsSection,
-      jdTextEl,
-      record.notes ? el('div', { class: 'notes-callout mt-4' },
-        el('div', { class: 'notes-title' }, 'Personal Notes'),
-        el('div', { class: 'jd-text small', text: record.notes }),
-      ) : null,
-      actions,
+      jdContentEl,
     );
+
+    // Left Section 2: Dedicated Notes Panel below JD
+    const notesPanel = buildNotesPanel(record);
+
+    // Left column wrapping JD and Notes
+    const leftCol = el('div', { class: 'detail-left-col' }, jdPanel, notesPanel, actions);
 
     // Right: PDF viewer via blob URL (Bearer-fetched, revoked on close)
     const frame = el('iframe', {
-      class: 'pdf-frame', title: `Resume PDF for ${record.company}`,
+      class: 'pdf-frame',
+      title: `Resume PDF for ${record.company}`,
       'aria-label': `Resume PDF for ${record.company}`,
     });
 
@@ -223,7 +253,8 @@ export async function renderApplicationDetail(host, appId) {
         },
       }, icon('download', 14), 'Download'),
       el('button', {
-        class: 'btn btn-ghost btn-sm', id: 'open-tab',
+        class: 'btn btn-ghost btn-sm',
+        id: 'open-tab',
         'aria-label': 'Open resume in new tab',
         onclick: (e) => { e.preventDefault(); openPdfNewTab(); },
       }, icon('external', 14), 'Open Tab'),
@@ -238,8 +269,10 @@ export async function renderApplicationDetail(host, appId) {
 
     async function loadPdf() {
       if (!record.resume) {
-        frame.replaceWith(el('div', { class: 'card card-pad empty-state', style: { height: '480px', display: 'grid', placeItems: 'center' } },
-          el('p', { class: 'muted' }, 'No resume PDF attached.')));
+        frame.replaceWith(el('div', {
+          class: 'card card-pad empty-state',
+          style: { height: '480px', display: 'grid', placeItems: 'center' },
+        }, el('p', { class: 'muted' }, 'No resume PDF attached.')));
         return;
       }
       try {
@@ -265,15 +298,15 @@ export async function renderApplicationDetail(host, appId) {
     const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
     let container;
     if (isMobile()) {
-      const jdPane = el('div', { role: 'tabpanel', id: 'tab-jd' }, jdPanel);
+      const leftPane = el('div', { role: 'tabpanel', id: 'tab-jd' }, leftCol);
       const pdfPane = el('div', { role: 'tabpanel', id: 'tab-pdf', hidden: true }, pdfPanel);
       const tabs = el('div', { class: 'tabs mb-4', role: 'tablist' },
-        tabBtn('Job description', jdPane, pdfPane, true),
-        tabBtn('Resume', pdfPane, jdPane, false),
+        tabBtn('Job & Notes', leftPane, pdfPane, true),
+        tabBtn('Resume PDF', pdfPane, leftPane, false),
       );
-      container = el('div', {}, tabs, jdPane, pdfPane);
+      container = el('div', {}, tabs, leftPane, pdfPane);
     } else {
-      container = el('div', { class: 'detail-split' }, jdPanel, pdfPanel);
+      container = el('div', { class: 'detail-split' }, leftCol, pdfPanel);
     }
     loadPdf();
     return el('div', {}, back, header, container);
@@ -281,10 +314,16 @@ export async function renderApplicationDetail(host, appId) {
 
   function tabBtn(label, showPane, hidePane, selected) {
     return el('button', {
-      class: 'tab', role: 'tab', 'aria-selected': String(selected),
+      class: 'tab',
+      role: 'tab',
+      'aria-selected': String(selected),
       onclick: (e) => {
-        showPane.hidden = false; hidePane.hidden = true;
-        tabs.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t === e.target)));
+        showPane.hidden = false;
+        hidePane.hidden = true;
+        const parent = e.target.closest('.tabs');
+        if (parent) {
+          parent.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t === e.target)));
+        }
       },
     }, label);
   }
@@ -293,29 +332,133 @@ export async function renderApplicationDetail(host, appId) {
   return { destroy };
 }
 
-function highlightSkill(container, rawText, term) {
-  container.innerHTML = '';
-  if (!term || !rawText) {
-    container.textContent = rawText || 'No job description saved.';
-    return;
-  }
-  const escaped = term.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-  const regex = new RegExp(`(\\b${escaped}\\b)`, 'gi');
-  const parts = rawText.split(regex);
-  let firstMatch = null;
+function buildNotesPanel(record) {
+  const panel = el('section', { class: 'card notes-panel', 'aria-label': 'Personal Notes' });
+  let isEditing = false;
 
-  for (const part of parts) {
-    if (part.toLowerCase() === term.toLowerCase()) {
-      const mark = document.createElement('mark');
-      mark.className = 'jd-highlight';
-      mark.textContent = part;
-      container.append(mark);
-      if (!firstMatch) firstMatch = mark;
+  const header = el('div', { class: 'notes-header' },
+    el('div', { class: 'notes-title' },
+      icon('edit', 16),
+      el('span', {}, 'Personal Notes'),
+      el('span', { class: 'notes-badge-pill' }, 'Markdown Supported'),
+    ),
+  );
+
+  const body = el('div', { class: 'notes-body' });
+
+  function renderView() {
+    body.innerHTML = '';
+    header.querySelectorAll('.notes-header-action').forEach((a) => a.remove());
+
+    if (isEditing) {
+      const textarea = el('textarea', {
+        class: 'textarea notes-editor-textarea',
+        placeholder: 'Write personal notes in Markdown (# headings, **bold**, - checklists, interview prep, recruiter info)...',
+        'aria-label': 'Personal Notes Editor',
+      });
+      textarea.value = record.notes || '';
+
+      const saveBtn = el('button', {
+        class: 'btn btn-primary btn-sm',
+        type: 'button',
+      }, icon('check', 14), 'Save Notes');
+
+      const cancelBtn = el('button', {
+        class: 'btn btn-ghost btn-sm',
+        type: 'button',
+        onclick: () => {
+          isEditing = false;
+          renderView();
+        },
+      }, 'Cancel');
+
+      saveBtn.onclick = async () => {
+        saveBtn.classList.add('loading');
+        try {
+          const val = textarea.value.trim();
+          const fd = new FormData();
+          fd.set('notes', val);
+          await patchUpload(`/api/applications/${record.id}`, fd);
+          record.notes = val;
+          isEditing = false;
+          toast('Notes updated successfully', 'success');
+          renderView();
+        } catch (err) {
+          toast(err.message || 'Failed to update notes', 'error');
+        } finally {
+          saveBtn.classList.remove('loading');
+        }
+      };
+
+      const editorBox = el('div', { class: 'notes-editor-box' },
+        textarea,
+        el('div', { class: 'row', style: { justifyContent: 'space-between', alignItems: 'center' } },
+          el('span', { class: 'faint small' }, 'Supports Markdown: # header, **bold**, - lists, `code`, [link](url)'),
+          el('div', { class: 'row', style: { gap: '8px' } }, cancelBtn, saveBtn),
+        ),
+      );
+
+      body.append(editorBox);
+      setTimeout(() => textarea.focus(), 50);
     } else {
-      container.append(document.createTextNode(part));
+      const editBtn = el('button', {
+        class: 'btn btn-secondary btn-sm notes-header-action',
+        onclick: () => {
+          isEditing = true;
+          renderView();
+        },
+      }, icon('edit', 14), 'Edit Notes');
+
+      const copyBtn = el('button', {
+        class: 'btn btn-ghost btn-sm notes-header-action',
+        onclick: async () => {
+          try {
+            await navigator.clipboard.writeText(record.notes || '');
+            toast('Notes copied to clipboard', 'success');
+          } catch {
+            toast('Could not copy notes', 'error');
+          }
+        },
+      }, icon('copy', 14), 'Copy');
+
+      const headerActions = el('div', { class: 'row notes-header-action', style: { gap: '8px' } },
+        record.notes ? copyBtn : null,
+        editBtn,
+      );
+      header.append(headerActions);
+
+      if (record.notes && record.notes.trim()) {
+        const mdContainer = el('div', { class: 'md-content' });
+        mdContainer.innerHTML = renderMarkdown(record.notes);
+        body.append(mdContainer);
+      } else {
+        const emptyBox = el('div', { class: 'notes-empty-state' },
+          el('p', { class: 'muted small mb-3' }, 'No notes added for this application yet.'),
+          el('button', {
+            class: 'btn btn-primary btn-sm',
+            onclick: () => {
+              isEditing = true;
+              renderView();
+            },
+          }, icon('plus', 14), 'Add Notes (Markdown)'),
+        );
+        body.append(emptyBox);
+      }
     }
   }
 
+  renderView();
+  panel.append(header, body);
+  return panel;
+}
+
+function highlightSkill(container, rawText, term) {
+  if (!term || !rawText) {
+    container.innerHTML = renderMarkdown(rawText || '*No job description saved.*');
+    return;
+  }
+  container.innerHTML = renderMarkdown(rawText, term);
+  const firstMatch = container.querySelector('mark.jd-highlight');
   if (firstMatch) {
     firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
