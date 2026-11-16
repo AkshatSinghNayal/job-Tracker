@@ -881,7 +881,6 @@ body.kanban-is-dragging,
 body.kanban-is-dragging * {
   cursor: grabbing !important;
 }
-body.kanban-is-dragging .kanban-empty-slot,
 body.kanban-is-dragging .kanban-card-top,
 body.kanban-is-dragging .kanban-card-title,
 body.kanban-is-dragging .kanban-card-foot,
@@ -1037,11 +1036,28 @@ body.kanban-is-dragging .col-quick-add-btn {
 .kanban-empty-slot {
   border: 2px dashed var(--border);
   border-radius: var(--r-md);
-  padding: 24px 12px;
+  padding: 28px 14px;
   text-align: center;
   font-size: var(--fs-xs);
   font-weight: 700;
   color: var(--text-3);
+  background: transparent;
+  transition: all var(--t-fast);
+  cursor: pointer;
+  user-select: none;
+}
+.kanban-empty-slot:hover,
+.kanban-empty-slot.slot-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  transform: scale(1.01);
+}
+[data-theme="dark"] .kanban-empty-slot:hover,
+[data-theme="dark"] .kanban-empty-slot.slot-active {
+  border-color: #818cf8;
+  background: rgba(129, 140, 248, 0.15);
+  color: #a5b4fc;
 }
 
 /* ---------- Detail Split View ---------- */

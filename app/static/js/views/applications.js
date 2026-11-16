@@ -342,6 +342,57 @@ function openMoveMenu(e, item) {
   activeMoveMenu = menu;
 }
 
+function createEmptySlot(col, onReload) {
+  const slot = el('div', {
+    class: 'kanban-empty-slot',
+    'data-stage': col.id,
+    title: `Drop application here or click to add to ${col.label}`,
+    onclick: () => openNewApplicationDrawer(onReload, null, col.id),
+  }, 'Drop application here');
+
+  slot.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    slot.classList.add('slot-active');
+  });
+
+  slot.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
+    }
+    slot.classList.add('slot-active');
+  });
+
+  slot.addEventListener('dragleave', () => {
+    slot.classList.remove('slot-active');
+  });
+
+  slot.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    slot.classList.remove('slot-active');
+    document.querySelectorAll('.kanban-col').forEach((c) => c.classList.remove('kanban-drop-target'));
+    document.querySelectorAll('.kanban-empty-slot').forEach((s) => s.classList.remove('slot-active'));
+
+    let appId = null;
+    if (e.dataTransfer) {
+      try {
+        appId = e.dataTransfer.getData('application/x-jobtracker-app-id') ||
+                e.dataTransfer.getData('text/plain') ||
+                e.dataTransfer.getData('text');
+      } catch (_) {}
+    }
+    if (!appId) {
+      appId = activeDraggedAppId;
+    }
+    if (!appId) return;
+
+    await moveApplicationToStage(appId, col.id, col.label);
+  });
+
+  return slot;
+}
+
 async function moveApplicationToStage(appId, newStatus, newLabel) {
   const targetItem = allLoadedItems.find((i) => String(i.id) === String(appId));
   if (!targetItem) return;
@@ -360,6 +411,9 @@ async function moveApplicationToStage(appId, newStatus, newLabel) {
   if (cardEl && targetContainer) {
     const sourceContainer = cardEl.parentElement;
     targetContainer.appendChild(cardEl);
+    cardEl.classList.remove('is-dragging');
+    document.body.classList.remove('kanban-is-dragging');
+    document.querySelectorAll('.kanban-empty-slot').forEach((s) => s.classList.remove('slot-active'));
 
     // Update badge on the card
     const badgeEl = cardEl.querySelector('.badge');
@@ -372,9 +426,12 @@ async function moveApplicationToStage(appId, newStatus, newLabel) {
     const targetEmpty = targetContainer.querySelector('.kanban-empty-slot');
     if (targetEmpty) targetEmpty.remove();
 
-    // If source column is now empty, add empty placeholder
+    // If source column is now empty, add empty placeholder with active drop handlers
     if (sourceContainer && !sourceContainer.querySelector('.kanban-card')) {
-      sourceContainer.appendChild(el('div', { class: 'kanban-empty-slot' }, 'Drop application here'));
+      const srcColEl = sourceContainer.closest('.kanban-col');
+      const srcStatus = srcColEl?.dataset.status;
+      const srcStage = KANBAN_STAGES.find((s) => s.id === srcStatus) || { id: srcStatus, label: srcStatus };
+      sourceContainer.appendChild(createEmptySlot(srcStage, () => document.dispatchEvent(new CustomEvent('app:reload'))));
     }
 
     // Update count pills on both columns
@@ -412,7 +469,7 @@ function attachPointerDrag(card, item) {
   let activeDropCol = null;
 
   const onPointerDown = (e) => {
-    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    if (e.pointerType === 'mouse') return;
     if (e.target.closest('button, a, input, select')) return;
 
     isDown = true;
@@ -543,7 +600,7 @@ function kanbanBoard(items = [], onReload) {
     const cardsContainer = el('div', { class: 'kanban-cards-list', 'data-stage': col.id });
 
     if (!colItems.length) {
-      cardsContainer.append(el('div', { class: 'kanban-empty-slot' }, 'Drop application here'));
+      cardsContainer.append(createEmptySlot(col, onReload));
     } else {
       for (const item of colItems) {
         cardsContainer.append(kanbanCard(item, onReload));
@@ -582,11 +639,14 @@ function kanbanBoard(items = [], onReload) {
       dragCounter = 0;
       colEl.classList.remove('kanban-drop-target');
       document.querySelectorAll('.kanban-col').forEach((c) => c.classList.remove('kanban-drop-target'));
+      document.querySelectorAll('.kanban-empty-slot').forEach((s) => s.classList.remove('slot-active'));
 
       let appId = null;
       if (e.dataTransfer) {
         try {
-          appId = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text');
+          appId = e.dataTransfer.getData('application/x-jobtracker-app-id') ||
+                  e.dataTransfer.getData('text/plain') ||
+                  e.dataTransfer.getData('text');
         } catch (_) {}
       }
       if (!appId) {
@@ -660,6 +720,7 @@ function kanbanCard(item, onReload) {
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move';
       try {
+        e.dataTransfer.setData('application/x-jobtracker-app-id', String(item.id));
         e.dataTransfer.setData('text/plain', String(item.id));
         e.dataTransfer.setData('text', String(item.id));
       } catch (_) {}
@@ -672,6 +733,7 @@ function kanbanCard(item, onReload) {
     card.classList.remove('is-dragging');
     document.body.classList.remove('kanban-is-dragging');
     document.querySelectorAll('.kanban-col').forEach((c) => c.classList.remove('kanban-drop-target'));
+    document.querySelectorAll('.kanban-empty-slot').forEach((s) => s.classList.remove('slot-active'));
     dragOccurredTime = Date.now();
     setTimeout(() => {
       activeDraggedAppId = null;
