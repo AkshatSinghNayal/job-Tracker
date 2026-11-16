@@ -1,0 +1,25 @@
+# Render blueprint for the MongoDB host.
+#
+# IMPORTANT: Vercel cannot reach Render *private* services, so Mongo runs as a
+# public web service. You MUST add a TCP proxy in the Render dashboard after
+# the first deploy (Service → Settings → Ports → "Add TCP Proxy", e.g. 10000 → 27017).
+# Then your APP_DB_URI is:
+#   mongodb://<USER>:<PASSWORD>@<service-host>:10000/?authSource=admin
+#
+# Deploy: Render → New → Blueprint → point at this repo (or create the service manually).
+services:
+  - type: web
+    name: jobtracker-mongo
+    runtime: image
+    image:
+      url: docker.io/library/mongo:7
+    plan: starter
+    disk:
+      name: mongo-data
+      mountPath: /data/db
+      sizeGB: 1
+    envVars:
+      - key: MONGO_INITDB_ROOT_USERNAME
+        sync: false
+      - key: MONGO_INITDB_ROOT_PASSWORD
+        generateValue: true   # long random password; view it in the dashboard
