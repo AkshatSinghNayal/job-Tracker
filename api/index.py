@@ -1,4 +1,11 @@
 # Vercel entrypoint — the Python runtime serves this ASGI app directly.
-# Startup (DB connect, admin bootstrap, indexes) runs lazily on the first
-# request via app.main.ensure_started(); see app/main.py.
-from app.main import app  # noqa: F401  (ASGI callable consumed by Vercel)
+import sys
+from pathlib import Path
+
+# Add workspace root to sys.path so 'app' is always cleanly imported on Vercel
+root_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
+from app.main import app  # noqa: F401, E402
+

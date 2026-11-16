@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -55,13 +56,18 @@ async def ensure_started() -> None:
             "starting jobtracker",
             extra={"ctx": {"db_name": settings.app_db_name, "cookie_secure": settings.cookie_secure}},
         )
-        db = await connect_app_db()  # fails fast if APP_DB_URI is unreachable
-        await auth_service.ensure_admin(db)
-        await db["applications"].create_index([("company", 1), ("created_at", -1)])
-        await db["applications"].create_index("status")
-        await db["connections"].create_index("name")
-        await db["refresh_tokens"].create_index("expires_at", expireAfterSeconds=0)
-        _started = True
+        try:
+            db = await connect_app_db()  # fails fast if APP_DB_URI is unreachable
+            await auth_service.ensure_admin(db)
+            await db["applications"].create_index([("company", 1), ("created_at", -1)])
+            await db["applications"].create_index("status")
+            await db["connections"].create_index("name")
+            await db["refresh_tokens"].create_index("expires_at", expireAfterSeconds=0)
+            _started = True
+        except Exception as exc:
+            log.exception("Startup DB connection error: %s", exc)
+            if not os.environ.get("VERCEL"):
+                raise
 
 
 @asynccontextmanager
@@ -93,7 +99,10 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
-        await ensure_started()  # no-op after first call; required on serverless
+        try:
+            await ensure_started()  # no-op after first call; required on serverless
+        except Exception as exc:
+            log.error("ensure_started error in middleware: %s", exc)
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = CSP
         response.headers["X-Content-Type-Options"] = "nosniff"
