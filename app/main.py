@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -41,6 +42,19 @@ _started = False
 _start_lock = asyncio.Lock()
 
 
+async def _create_indexes_bg(db) -> None:
+    try:
+        await asyncio.gather(
+            db["applications"].create_index([("company", 1), ("created_at", -1)]),
+            db["applications"].create_index("status"),
+            db["connections"].create_index("name"),
+            db["refresh_tokens"].create_index("expires_at", expireAfterSeconds=0),
+            return_exceptions=True,
+        )
+    except Exception as exc:
+        log.warning("Background index creation warning: %s", exc)
+
+
 async def ensure_started() -> None:
     """Idempotent startup: works under lifespan (Docker/local) and per-request
     (Vercel serverless, which does not run lifespan events)."""
@@ -57,13 +71,10 @@ async def ensure_started() -> None:
             extra={"ctx": {"db_name": settings.app_db_name, "cookie_secure": settings.cookie_secure}},
         )
         try:
-            db = await connect_app_db()  # fails fast if APP_DB_URI is unreachable
+            db = await connect_app_db()
             await auth_service.ensure_admin(db)
-            await db["applications"].create_index([("company", 1), ("created_at", -1)])
-            await db["applications"].create_index("status")
-            await db["connections"].create_index("name")
-            await db["refresh_tokens"].create_index("expires_at", expireAfterSeconds=0)
             _started = True
+            asyncio.create_task(_create_indexes_bg(db))
         except Exception as exc:
             log.exception("Startup DB connection error: %s", exc)
             if not os.environ.get("VERCEL"):
@@ -89,6 +100,8 @@ def create_app() -> FastAPI:
         openapi_url=None,
     )
 
+    app.add_middleware(GZipMiddleware, minimum_size=500)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.origins,
@@ -99,10 +112,12 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
-        try:
-            await ensure_started()  # no-op after first call; required on serverless
-        except Exception as exc:
-            log.error("ensure_started error in middleware: %s", exc)
+        # Only initialize database on actual API endpoints; static files & shell don't need DB
+        if request.url.path.startswith("/api/"):
+            try:
+                await ensure_started()
+            except Exception as exc:
+                log.error("ensure_started error in middleware: %s", exc)
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = CSP
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -163,7 +178,15 @@ def create_app() -> FastAPI:
         Path("/var/task/app/static"),
     ]
     static_dir = next((c for c in static_candidates if c.is_dir()), static_candidates[0])
-    app.mount("/static", StaticFiles(directory=str(static_dir), check_dir=False), name="static")
+
+    class CachedStaticFiles(StaticFiles):
+        async def get_response(self, path: str, scope):
+            response = await super().get_response(path, scope)
+            # Long-term cache with stale-while-revalidate for instant edge & browser delivery
+            response.headers["Cache-Control"] = "public, max-age=31536000, stale-while-revalidate=86400"
+            return response
+
+    app.mount("/static", CachedStaticFiles(directory=str(static_dir), check_dir=False), name="static")
     return app
 
 

@@ -21,13 +21,18 @@ _app_client: AsyncIOMotorClient | None = None
 
 async def connect_app_db() -> AsyncIOMotorDatabase:
     global _app_client
+    if _app_client is not None:
+        return _app_client[get_settings().app_db_name]
     settings = get_settings()
     _app_client = AsyncIOMotorClient(
         settings.app_db_uri,
         serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        maxPoolSize=10,
+        minPoolSize=1,
+        maxIdleTimeMS=45000,
         uuidRepresentation="standard",
     )
-    await _app_client.admin.command("ping")  # fail fast if unreachable
     return _app_client[settings.app_db_name]
 
 

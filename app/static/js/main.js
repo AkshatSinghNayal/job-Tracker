@@ -1,24 +1,49 @@
-// main.js — hash router, app shell, keyboard shortcuts.
+// main.js — hash router, app shell, lazy route loading & keyboard shortcuts.
 import { api, getToken, clearToken } from './api.js';
 import { setState, store, subscribe } from './store.js';
 import { el, toast, icon } from './components/ui.js';
-import { renderLogin } from './views/login.js';
-import { renderApplications, openNewApplicationDrawer } from './views/applications.js';
-import { renderApplicationDetail } from './views/detail.js';
-import { renderExplorer } from './views/explorer.js';
-import { renderConnections } from './views/connections.js';
-import { renderSettings } from './views/settings.js';
 
 const app = document.getElementById('app');
 let currentView = null;
 let shellBuilt = false;
 
+// Dynamic route-based code splitting: views download only when navigated to
 const routes = [
-  { pattern: /^#\/login$/, view: renderLogin, public: true },
-  { pattern: /^#\/apps\/([\w-]+)$/, view: (host, m) => renderApplicationDetail(host, m[1]) },
-  { pattern: /^#\/apps$/, view: (host) => renderApplications(host) },
-  { pattern: /^#\/settings$/, view: renderSettings },
+  {
+    pattern: /^#\/login$/,
+    view: async (host) => {
+      const { renderLogin } = await import('./views/login.js');
+      return renderLogin(host);
+    },
+    public: true,
+  },
+  {
+    pattern: /^#\/apps\/([\w-]+)$/,
+    view: async (host, m) => {
+      const { renderApplicationDetail } = await import('./views/detail.js');
+      return renderApplicationDetail(host, m[1]);
+    },
+  },
+  {
+    pattern: /^#\/apps$/,
+    view: async (host) => {
+      const { renderApplications } = await import('./views/applications.js');
+      return renderApplications(host);
+    },
+  },
+  {
+    pattern: /^#\/settings$/,
+    view: async (host) => {
+      const { renderSettings } = await import('./views/settings.js');
+      return renderSettings(host);
+    },
+  },
 ];
+
+async function getNewAppDrawer() {
+  const { openNewApplicationDrawer } = await import('./views/applications.js');
+  return openNewApplicationDrawer;
+}
 
 function buildShell() {
   if (shellBuilt) return;
@@ -56,7 +81,12 @@ async function route() {
   if (!r.public) buildShell();
   const container = r.public ? app : withShell(app);
   container.innerHTML = '';
-  currentView = r.view(container, m) || null;
+  const viewRes = r.view(container, m);
+  if (viewRes && typeof viewRes.then === 'function') {
+    currentView = await viewRes;
+  } else {
+    currentView = viewRes || null;
+  }
 }
 
 function withShell(appRoot) {
@@ -116,7 +146,10 @@ function shellEl() {
         const btn = el('button', {
           class: 'btn btn-primary', id: 'btn-new-app',
           title: 'New application (click or drop a resume PDF here)',
-          onclick: () => openNewApplicationDrawer(loadApplications),
+          onclick: async () => {
+            const drawer = await getNewAppDrawer();
+            drawer(loadApplications);
+          },
         }, icon('plus', 16), 'New application');
 
         btn.addEventListener('dragover', (e) => {
@@ -125,11 +158,12 @@ function shellEl() {
             e.dataTransfer.dropEffect = 'copy';
           }
         });
-        btn.addEventListener('drop', (e) => {
+        btn.addEventListener('drop', async (e) => {
           if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             e.preventDefault();
             e.stopPropagation();
-            openNewApplicationDrawer(loadApplications, null, 'saved', e.dataTransfer.files[0]);
+            const drawer = await getNewAppDrawer();
+            drawer(loadApplications, null, 'saved', e.dataTransfer.files[0]);
           }
         });
         return btn;
@@ -196,9 +230,18 @@ document.addEventListener('keydown', (e) => {
     if (search) { e.preventDefault(); search.focus(); }
   } else if (e.key === 'n' && (location.hash === '#/apps' || location.hash === '')) {
     e.preventDefault();
-    openNewApplicationDrawer(loadApplications);
+    getNewAppDrawer().then((drawer) => drawer(loadApplications));
   }
 });
+
+// Idle-time prefetching: when user is signed in, prefetch the main pipeline view in background
+if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+  window.requestIdleCallback(() => {
+    if (getToken()) {
+      import('./views/applications.js');
+    }
+  });
+}
 
 window.addEventListener('auth:expired', () => {
   clearToken();

@@ -5,9 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>JobTracker</title>
+
+  <!-- High-priority asset preloads for lightning-fast paint -->
+  <link rel="preload" href="/static/css/design-system.css" as="style">
+  <link rel="stylesheet" href="/static/css/design-system.css">
+  <link rel="modulepreload" href="/static/js/main.js">
+  <link rel="modulepreload" href="/static/js/api.js">
+  <link rel="modulepreload" href="/static/js/components/ui.js">
+  <link rel="modulepreload" href="/static/js/store.js">
+
+  <!-- Non-render-blocking typography with swap fallback -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" media="print" onload="this.media='all'">
+  <noscript>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap">
+  </noscript>
+
   <script>
     (function() {
       const saved = localStorage.getItem('jt_theme');
@@ -16,7 +31,7 @@
       document.documentElement.setAttribute('data-theme', theme);
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/design-system.css">
+
   <link rel="icon" type="image/svg+xml" href="/static/img/cat-logo.svg">
   <link rel="alternate icon" href="/static/img/cat-logo.jpg">
 </head>
